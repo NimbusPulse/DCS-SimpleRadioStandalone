@@ -12,6 +12,7 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Server.API.Routes
 
             Match match = Regex.Match(path, @"^/ban/([a-zA-Z0-9]+)$");
 
+
             if (match.Success)
             {
                 string userId = match.Groups[1].Value;
