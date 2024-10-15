@@ -354,6 +354,10 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="API\Routes\Ban.cs" />
+    <Compile Include="API\Routes\Kick.cs" />
+    <Compile Include="API\Routes\Response.cs" />
+    <Compile Include="API\Routes\Route.cs" />
     <Compile Include="Bootstrapper.cs" />
     <Compile Include="Network\Models\OutgoingTCPMessage.cs" />
     <Compile Include="Network\Models\OutgoingUDPPackets.cs" />

@@ -2,8 +2,12 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Net;
 using System.Runtime;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -12,6 +16,7 @@ using Ciribob.DCS.SimpleRadio.Standalone.Common;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Helpers;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Network;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Setting;
+using Ciribob.DCS.SimpleRadio.Standalone.Server.API.Routes;
 using Ciribob.DCS.SimpleRadio.Standalone.Server.Network;
 using Ciribob.DCS.SimpleRadio.Standalone.Server.Settings;
 using Ciribob.DCS.SimpleRadio.Standalone.Server.UI.ClientAdmin;
@@ -20,7 +25,6 @@ using NLog;
 using NLog.Config;
 using NLog.Targets;
 using NLog.Targets.Wrappers;
-using Sentry;
 using LogManager = NLog.LogManager;
 
 namespace Ciribob.DCS.SimpleRadio.Standalone.Server
@@ -29,17 +33,98 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Server
     {
         private readonly SimpleContainer _simpleContainer = new SimpleContainer();
         private bool loggingReady = false;
+        private HttpListener _httpListener;
+        private CancellationTokenSource _cancellationTokenSource;
+        private readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
         public Bootstrapper()
         {
-            SentrySdk.Init("https://0935ffeb7f9c46e28a420775a7f598f4@o414743.ingest.sentry.io/5315043");
-
             Initialize();
             SetupLogging();
 
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
 
             Analytics.Log("Server", "Startup", Guid.NewGuid().ToString());
+
+            InitializeHttpServer();
+        }
+
+        private void InitializeHttpServer()
+        {
+            _httpListener = new HttpListener();
+            _httpListener.Prefixes.Add("http://127.0.0.1:8080/");
+            _cancellationTokenSource = new CancellationTokenSource();
+
+            Task.Run(() => StartHttpServer(_cancellationTokenSource.Token));
+        }
+
+        private async Task StartHttpServer(CancellationToken cancellationToken)
+        {
+            _httpListener.Start();
+            _logger.Info("HTTP Server started. Listening on http://127.0.0.1:8080/");
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    HttpListenerContext context = await _httpListener.GetContextAsync();
+                    ProcessRequest(context);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Error processing HTTP request");
+                }
+            }
+
+            _httpListener.Stop();
+            _logger.Info("HTTP Server stopped.");
+        }
+
+        private void ProcessRequest(HttpListenerContext context)
+        {
+            string path = context.Request.Url.AbsolutePath;
+            string method = context.Request.HttpMethod;
+
+            string responseString = "Invalid request";
+            int statusCode = 400;
+
+            if (method == "POST")
+            {
+                if (path.StartsWith("/kick/"))
+                {
+                    Response response = Kick.Handle(context, _logger);
+                    responseString = response.Message;
+                    statusCode = response.StatusCode;
+                }
+                else if (path.StartsWith("/ban/"))
+                {
+                    Response response = Ban.Handle(context, _logger);
+                    responseString = response.Message;
+                    statusCode = response.StatusCode;
+                }
+                else
+                {
+                    responseString = "Endpoint not found";
+                    statusCode = 404;
+                }
+            }
+            else
+            {
+                responseString = "Method not allowed";
+                statusCode = 405;
+            }
+
+            SendResponse(context, responseString, statusCode);
+        }
+
+        private void SendResponse(HttpListenerContext context, string responseString, int statusCode)
+        {
+            byte[] buffer = Encoding.UTF8.GetBytes(responseString);
+
+            context.Response.StatusCode = statusCode;
+            context.Response.ContentLength64 = buffer.Length;
+            context.Response.OutputStream.Write(buffer, 0, buffer.Length);
+            context.Response.Close();
         }
 
         private void SetupLogging()
@@ -127,6 +212,9 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Server
         {
             var serverState = (ServerState)_simpleContainer.GetInstance(typeof(ServerState), null);
             serverState.StopServer();
+
+            _cancellationTokenSource.Cancel();
+            base.OnExit(sender, e);
         }
 
         protected override void OnUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
