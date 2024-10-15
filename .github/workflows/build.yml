@@ -8,13 +8,13 @@ jobs:
     runs-on: windows-2022
     steps:
     - name: Checkout
-      uses: actions/checkout@v1
+      uses: actions/checkout@v4
 
     - name: Add msbuild to PATH
-      uses: microsoft/setup-msbuild@v1
+      uses: microsoft/setup-msbuild@v2
 
     - name: Setup NuGet
-      uses: nuget/setup-nuget@v1
+      uses: nuget/setup-nuget@v2
 
     - name: Restore NuGet packages
       run: nuget restore
@@ -23,7 +23,7 @@ jobs:
       run: msbuild /p:Configuration=Release /p:Platform=x64 /p:SourceLinkCreate=false
 
     - name: Archive
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: DCS-SimpleRadioStandalone
         path: install-build
